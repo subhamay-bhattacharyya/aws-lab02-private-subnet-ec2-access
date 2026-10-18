@@ -1,7 +1,8 @@
 {
   "Environment": "devl",
-  "KmsKey": "SB-KMS",
-  "ProjectName": "cfn-nstd",
-  "BucketBaseName": "s3-nested-stack",
+  "ProjectName": "networking",
+  "VPCCidrBlock": "10.11.0.0/16",
+  "PublicSubnetCidrBlocks": "10.11.0.0/20",
+  "PrivateSubnetCidrBlocks": "10.11.48.0/20",
   "CiSuffix": ""
 }

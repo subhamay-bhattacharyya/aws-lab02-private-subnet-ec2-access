@@ -1,4 +1,4 @@
-# CloudFormation S3 Template Repository
+# # AWS Networking Lab 01:  VPC with Public and Private Subnets
 
 <!-- Row 1: Status - Most Important -->
 [![Release](https://img.shields.io/github/v/release/subhamay-bhattacharyya/aws-lab02-private-subnet-ec2-access?label=Release)](https://github.com/subhamay-bhattacharyya/aws-lab02-private-subnet-ec2-access/releases)&nbsp;[![Release Workflow](https://github.com/subhamay-bhattacharyya/aws-lab02-private-subnet-ec2-access/actions/workflows/release.yaml/badge.svg)](https://github.com/subhamay-bhattacharyya/aws-lab02-private-subnet-ec2-access/actions/workflows/release.yaml)&nbsp;[![Issues](https://img.shields.io/github/issues/subhamay-bhattacharyya/aws-lab02-private-subnet-ec2-access)](https://github.com/subhamay-bhattacharyya/aws-lab02-private-subnet-ec2-access/issues)&nbsp;[![Last Commit](https://img.shields.io/github/last-commit/subhamay-bhattacharyya/aws-lab02-private-subnet-ec2-access)](https://github.com/subhamay-bhattacharyya/aws-lab02-private-subnet-ec2-access/commits)
