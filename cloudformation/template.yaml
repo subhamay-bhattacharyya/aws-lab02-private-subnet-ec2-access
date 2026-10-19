@@ -30,13 +30,14 @@ Metadata:
       - Label:
           default: "Security Group Configuration"
         Parameters:
-          - SSHOnlySecurityGroupBaseName
-      - Label:
-          default: "EC2 Instance Configuration"
-        Parameters:
-          - ImageId
-          - InstanceType
-          - KeyPairName
+          - PublicSshSgName
+          - PrivateSshSgName
+      # - Label:
+      #     default: "EC2 Instance Configuration"
+      #   Parameters:
+      #     - ImageId
+      #     - InstanceType
+      #     - KeyPairName
       - Label:
           default: "Advanced Configuration"
         Parameters:
@@ -54,14 +55,16 @@ Metadata:
         default: "Public Subnet CIDR blocks (comma-separated, e.g., 10.10.0.0/20)"
       PrivateSubnetCidrBlocks:
         default: "Private Subnet CIDR blocks (comma-separated, e.g., 10.10.0.0/20)"
-      SSHOnlySecurityGroupBaseName:
-        default: "SSH Only Security Group Base Name"
-      ImageId:
-        default: "EC2 Image (AMI) SSM Parameter"
-      InstanceType:
-        default: "EC2 Instance Type"
-      KeyPairName:
-        default: "EC2 Key Pair Name (for SSH)"
+      PublicSshSgName:
+        default: "SSH Only Security Group Public Subnet Base Name"
+      PrivateSshSgName:
+        default: "SSH Only Security Group Private Subnet Base Name"
+      # ImageId:
+      #   default: "EC2 Image (AMI) SSM Parameter"
+      # InstanceType:
+      #   default: "EC2 Instance Type"
+      # KeyPairName:
+      #   default: "EC2 Key Pair Name (for SSH)"
       CiSuffix:
         default: "CI Suffix"
 
@@ -77,7 +80,7 @@ Parameters:
 
   ProjectName:
     Type: String
-    Default: "networking"
+    Default: "lab02"
     Description: "Project name to use as a bucket prefix"
     MinLength: 1
     MaxLength: 20
@@ -88,6 +91,11 @@ Parameters:
     Type: String
     Default: devl
     Description: "Deployment environment"
+    AllowedValues:
+      - devl
+      - stag
+      - prod
+    ConstraintDescription: "Environment must be one of: devl, stag, prod"
 
   VPCCidrBlock:
     Type: String
@@ -115,35 +123,44 @@ Parameters:
     Default: ""
     Description: "Optional CI suffix to append to the bucket name"
 
-  SSHOnlySecurityGroupBaseName:
+  PublicSshSgName:
     Type: String
-    Default: "ssh-sg"
-    Description: "Base name for the SSH-only security group, combined with the project and environment names"
+    Default: "ssh-public-sg"
+    Description: "Base name for the SSH-only security group in the public subnet, combined with the project and environment names"
     MinLength: 1
     MaxLength: 30
     AllowedPattern: "^[a-z0-9-]+$"
     ConstraintDescription: "Security group base name must be lowercase letters, numbers, and hyphens only"
 
-  ImageId:
-    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
-    Description: "SSM parameter that resolves to the EC2 image (AMI) ID for the instance. The default resolves to the latest Amazon Linux 2023 x86_64 AMI in the deployment region"
-
-  InstanceType:
+  PrivateSshSgName:
     Type: String
-    Default: "t3.micro"
-    AllowedValues:
-      - t3.micro
-      - t3.small
-      - t3.medium
-      - t2.micro
-    Description: "EC2 instance type"
-    ConstraintDescription: "Must be one of the allowed instance types"
+    Default: "ssh-private-sg"
+    Description: "Base name for the SSH-only security group in the private subnet, combined with the project and environment names"
+    MinLength: 1
+    MaxLength: 30
+    AllowedPattern: "^[a-z0-9-]+$"
+    ConstraintDescription: "Security group base name must be lowercase letters, numbers, and hyphens only"
 
-  KeyPairName:
-    Type: AWS::EC2::KeyPair::KeyName
-    Description: "Name of an existing EC2 key pair to use for SSH access. The console lists the key pairs available in this account and region"
-    ConstraintDescription: "Must be the name of an existing EC2 key pair in this account and region"
+  # ImageId:
+  #   Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+  #   Default: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+  #   Description: "SSM parameter that resolves to the EC2 image (AMI) ID for the instance. The default resolves to the latest Amazon Linux 2023 x86_64 AMI in the deployment region"
+
+  # InstanceType:
+  #   Type: String
+  #   Default: "t3.micro"
+  #   AllowedValues:
+  #     - t3.micro
+  #     - t3.small
+  #     - t3.medium
+  #     - t2.micro
+  #   Description: "EC2 instance type"
+  #   ConstraintDescription: "Must be one of the allowed instance types"
+
+  # KeyPairName:
+  #   Type: AWS::EC2::KeyPair::KeyName
+  #   Description: "Name of an existing EC2 key pair to use for SSH access. The console lists the key pairs available in this account and region"
+  #   ConstraintDescription: "Must be the name of an existing EC2 key pair in this account and region"
 
 Conditions:
   HasCiSuffix: !Not [!Equals [!Ref CiSuffix, ""]]
@@ -182,7 +199,7 @@ Resources:
           Value: RootStack
       TimeoutInMinutes: 10
 
-  PublicSubnetsNestedStack:
+  PublicSubnetsStack:
     Type: AWS::CloudFormation::Stack
     DeletionPolicy: Delete
     UpdateReplacePolicy: Delete
@@ -212,12 +229,12 @@ Resources:
         - Key: Project
           Value: "Implement VPC with single public subnet and EC2 SSH"
         - Key: Component
-          Value: NetworkingPublicSubnets
+          Value: PublicSubnetsNestedStack
         - Key: ManagedBy
           Value: RootStack
       TimeoutInMinutes: 10
 
-  PrivateSubnetsNestedStack:
+  PrivateSubnetsStack:
     Type: AWS::CloudFormation::Stack
     DeletionPolicy: Delete
     UpdateReplacePolicy: Delete
@@ -240,25 +257,24 @@ Resources:
         SubnetCidrBlocks: !Ref PrivateSubnetCidrBlocks
         SubnetCount: "1"
         SubnetQualifier: "private"
-        InternetGatewayId: !GetAtt VpcNestedStack.Outputs.InternetGatewayId
       Tags:
         - Key: Environment
           Value: !Ref Environment
         - Key: Project
           Value: "Implement VPC with single public subnet and EC2 SSH"
         - Key: Component
-          Value: NetworkingPublicSubnets
+          Value: PrivateSubnetsNestedStack
         - Key: ManagedBy
           Value: RootStack
       TimeoutInMinutes: 10
 
-  WebSecurityGroupNestedStack:
+  PublicSshSgStack:
     Type: AWS::CloudFormation::Stack
     DeletionPolicy: Delete
     UpdateReplacePolicy: Delete
     Metadata:
       com.aws.cloudformation.Context:
-        why: "Invokes the nested security groups CloudFormation template to create the web security group (to be attached to the Application Load Balancer) with inbound access from 0.0.0.0/0 in the VPC created by the VPC nested stack"
+        why: "Invokes the nested security groups CloudFormation template to create the SSH-only security group with inbound access from 0.0.0.0/0 in the VPC created by the VPC nested stack"
         must:
           - "Nested template must be accessible at the specified S3 location"
           - "IAM principal must have s3:GetObject permission on the template S3 bucket"
@@ -267,8 +283,10 @@ Resources:
       TemplateURL: !Sub "https://${NestedStacksS3BucketName}.s3.us-east-1.amazonaws.com/cfn-nested-aws-ec2-security-group/template.yaml"
       Parameters:
         VpcId: !GetAtt VpcNestedStack.Outputs.VPCId
-        SecurityGroupBaseName: !Ref SSHOnlySecurityGroupBaseName
+        ProjectName: !Ref ProjectName
+        SecurityGroupBaseName: !Ref PublicSshSgName
         SecurityGroupDescription: "Security group for SSH-only access"
+        CiSuffix: !Ref CiSuffix
         Rule1RuleSet: "SSHOnly"
         Rule1SourceCidr: "0.0.0.0/0"
         Rule2RuleSet: "None"
@@ -286,43 +304,72 @@ Resources:
         - Key: ManagedBy
           Value: RootStack
       TimeoutInMinutes: 10
-      
-  EC2Instance:
-    Type: AWS::EC2::Instance
+
+  PrivateSshSgStack:
+    Type: AWS::CloudFormation::Stack
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: "Invokes the nested security groups CloudFormation template to create the SSH-only security group with inbound access from the public SSH security group in the VPC created by the VPC nested stack"
+        must:
+          - "Nested template must be accessible at the specified S3 location"
+          - "IAM principal must have s3:GetObject permission on the template S3 bucket"
+          - "VpcNestedStack must complete first so that the VPC ID is available"
     Properties:
-      ImageId: !Ref ImageId
-      InstanceType: !Ref InstanceType
-      KeyName: !Ref KeyPairName
-      NetworkInterfaces:
-        - DeviceIndex: "0"
-          AssociatePublicIpAddress: true
-          SubnetId: !GetAtt PublicSubnetsNestedStack.Outputs.SubnetId1
-          GroupSet:
-            - !GetAtt WebSecurityGroupNestedStack.Outputs.SecurityGroupId
+      TemplateURL: !Sub "https://${NestedStacksS3BucketName}.s3.us-east-1.amazonaws.com/cfn-nested-aws-ec2-security-group/template.yaml"
+      Parameters:
+        VpcId: !GetAtt VpcNestedStack.Outputs.VPCId
+        ProjectName: !Ref ProjectName
+        SecurityGroupBaseName: !Ref PrivateSshSgName
+        SecurityGroupDescription: "Security group for SSH-only access"
+        CiSuffix: !Ref CiSuffix
+        Rule1RuleSet: "SSHOnly"
+        Rule1SourceSecurityGroupId: !GetAtt PublicSshSgStack.Outputs.SecurityGroupId
+        Rule2RuleSet: "None"
+        Rule3RuleSet: "None"
+        Rule4RuleSet: "None"
+        Rule5RuleSet: "None"
+        Environment: !Ref Environment
       Tags:
-        - Key: Name
-          Value: !If
-            - HasCiSuffix
-            - !Sub "${ProjectName}-${Environment}-ec2-${CiSuffix}"
-            - !Sub "${ProjectName}-${Environment}-ec2"
         - Key: Environment
           Value: !Ref Environment
         - Key: Project
           Value: "Implement VPC with single public subnet and EC2 SSH"
         - Key: Component
-          Value: NetworkingEC2Instance
+          Value: NetworkingSSHOnlySecurityGroupPrivateSubnet
         - Key: ManagedBy
           Value: RootStack
+      TimeoutInMinutes: 10
+      
+  # EC2Instance:
+  #   Type: AWS::EC2::Instance
+  #   Properties:
+  #     ImageId: !Ref ImageId
+  #     InstanceType: !Ref InstanceType
+  #     KeyName: !Ref KeyPairName
+  #     NetworkInterfaces:
+  #       - DeviceIndex: "0"
+  #         AssociatePublicIpAddress: true
+  #         SubnetId: !GetAtt PublicSubnetsStack.Outputs.SubnetId1
+  #         GroupSet:
+  #           - !GetAtt PublicSshSgStack.Outputs.SecurityGroupId
+  #     Tags:
+  #       - Key: Name
+  #         Value: !If
+  #           - HasCiSuffix
+  #           - !Sub "${ProjectName}-${Environment}-ec2-${CiSuffix}"
+  #           - !Sub "${ProjectName}-${Environment}-ec2"
+  #       - Key: Environment
+  #         Value: !Ref Environment
+  #       - Key: Project
+  #         Value: "Implement VPC with single public subnet and EC2 SSH"
+  #       - Key: Component
+  #         Value: NetworkingEC2Instance
+  #       - Key: ManagedBy
+  #         Value: RootStack
 
 Outputs:
-
-  EC2InstanceId:
-    Description: "ID of the EC2 instance launched in the public subnet"
-    Value: !Ref EC2Instance
-
-  EC2InstancePublicIp:
-    Description: "Public IP address of the EC2 instance"
-    Value: !GetAtt EC2Instance.PublicIp
 
   VpcId:
     Description: "ID of the VPC created by the nested stack"
@@ -334,12 +381,32 @@ Outputs:
 
   PublicSubnet1Arn:
     Description: "ARN of public subnet 1 created by the nested subnets stack"
-    Value: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${PublicSubnetsNestedStack.Outputs.SubnetId1}"
+    Value: !GetAtt PublicSubnetsStack.Outputs.SubnetId1
 
-  SSHOnlySecurityGroupId:
+  PrivateSubnet1Arn:
+    Description: "ARN of private subnet 1 created by the nested subnets stack"
+    Value: !GetAtt PrivateSubnetsStack.Outputs.SubnetId1
+
+  PublicSshSgId:
     Description: "ID of the SSH-only security group created by the nested security groups stack"
-    Value: !GetAtt WebSecurityGroupNestedStack.Outputs.SecurityGroupId
+    Value: !GetAtt PublicSshSgStack.Outputs.SecurityGroupId
 
-  SSHOnlySecurityGroupName:
+  PublicSshSgName:
     Description: "Name of the SSH-only security group created by the nested security groups stack"
-    Value: !GetAtt WebSecurityGroupNestedStack.Outputs.SecurityGroupName
+    Value: !GetAtt PublicSshSgStack.Outputs.SecurityGroupName
+
+  # PrivateSshSgId:
+  #   Description: "ID of the SSH-only security group created by the nested security groups stack"
+  #   Value: !GetAtt PrivateSshSgStack.Outputs.SecurityGroupId
+
+  # PrivateSshSgName:
+  #   Description: "Name of the SSH-only security group created by the nested security groups stack"
+  #   Value: !GetAtt PrivateSshSgStack.Outputs.SecurityGroupName 
+
+  # EC2InstanceId:
+  #   Description: "ID of the EC2 instance launched in the public subnet"
+  #   Value: !Ref EC2Instance
+
+  # EC2InstancePublicIp:
+  #   Description: "Public IP address of the EC2 instance"
+  #   Value: !GetAtt EC2Instance.PublicIp

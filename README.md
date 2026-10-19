@@ -1,4 +1,4 @@
-# # AWS Networking Lab 01:  VPC with Public and Private Subnets
+# AWS Networking Lab 02:  VPC with Public and Private Subnets
 
 <!-- Row 1: Status - Most Important -->
 [![Release](https://img.shields.io/github/v/release/subhamay-bhattacharyya/aws-lab02-private-subnet-ec2-access?label=Release)](https://github.com/subhamay-bhattacharyya/aws-lab02-private-subnet-ec2-access/releases)&nbsp;[![Release Workflow](https://github.com/subhamay-bhattacharyya/aws-lab02-private-subnet-ec2-access/actions/workflows/release.yaml/badge.svg)](https://github.com/subhamay-bhattacharyya/aws-lab02-private-subnet-ec2-access/actions/workflows/release.yaml)&nbsp;[![Issues](https://img.shields.io/github/issues/subhamay-bhattacharyya/aws-lab02-private-subnet-ec2-access)](https://github.com/subhamay-bhattacharyya/aws-lab02-private-subnet-ec2-access/issues)&nbsp;[![Last Commit](https://img.shields.io/github/last-commit/subhamay-bhattacharyya/aws-lab02-private-subnet-ec2-access)](https://github.com/subhamay-bhattacharyya/aws-lab02-private-subnet-ec2-access/commits)
@@ -15,235 +15,131 @@
 <!-- Row 5: Custom Metrics -->
 [![Custom Endpoint](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/bsubhamay/7fe6027c609d7c63549460bc7d6625ba/raw/aws-lab02-private-subnet-ec2-access.json)](https://gist.github.com/subhamay-bhattacharyya/7fe6027c609d7c63549460bc7d6625ba)
 
+## Architecture Diagram
+
+![Architecture diagram: VPC 10.11.0.0/16 in us-east-1a with a public subnet and a private subnet, an Internet gateway, and a route table for each subnet](media/architecture-diagram.jpg)
+
+The diagram shows EC2 instances in both subnets. The instances are commented out in `cloudformation/template.yaml`, so this stack does not deploy them.
+
 ---
 
-This repository contains nested CloudFormation templates for deploying S3 buckets with security best practices and optional policy enforcement.
+This lab deploys a VPC with one public subnet and one private subnet in `us-east-1a`, plus two SSH-only security groups. The root stack in `cloudformation/template.yaml` creates these resources through nested stacks whose templates are stored in an S3 bucket.
 
-## Overview
+The template also contains an `EC2Instance` resource, but it is commented out, so the stack does not launch an EC2 instance.
 
-This is a **nested stack template** designed to be invoked from a parent/root CloudFormation stack. Templates are stored in this repository and should be uploaded to an S3 bucket for reference by parent stacks.
+## Architecture
+
+The root stack creates the following nested stacks. Each one reads its template from the bucket named by the `NestedStacksS3BucketName` parameter.
+
+| Nested Stack | Template S3 Key | Creates |
+| ------------ | --------------- | ------- |
+| `VpcNestedStack` | `cfn-nested-aws-vpc/template.yaml` | VPC with DNS support and hostnames enabled, and an attached Internet Gateway |
+| `PublicSubnetsStack` | `cfn-nested-aws-subnets/template.yaml` | One public subnet in `us-east-1a` (`SubnetQualifier: public`), given the Internet Gateway ID |
+| `PrivateSubnetsStack` | `cfn-nested-aws-subnets/template.yaml` | One private subnet in `us-east-1a` (`SubnetQualifier: private`) |
+| `PublicSshSgStack` | `cfn-nested-aws-ec2-security-group/template.yaml` | SSH-only security group, with SSH allowed from `0.0.0.0/0` |
+| `PrivateSshSgStack` | `cfn-nested-aws-ec2-security-group/template.yaml` | SSH-only security group, with SSH allowed from the public SSH security group (`PublicSshSgStack`) |
+
+> **Note:** The template's `Description` mentions a NAT Gateway and a private route to it, but the template does not define a NAT Gateway. The private subnet stack receives no gateway ID.
 
 ## Template Files
 
-### CloudFormation Templates
-
-- **`templates/s3-bucket.yaml`** — Nested template for S3 bucket creation (versioning, public access blocking)
-- **`templates/s3-bucket-policy.yaml`** — Optional nested template for S3 bucket policy (encryption enforcement, secure transport)
-
-### Parameter Files
-
-- **`parameters/parameters.json`** — Parameter values for development environment
-
-## Template Features
-
-### S3 Bucket Template (s3-bucket.yaml)
-
-- ✅ Versioning enabled by default
-- ✅ Public Access Blocking
-- ✅ Smart bucket naming (project prefix, account ID, environment, region)
-- ✅ Optional CI suffix support
-
-### S3 Bucket Policy Template (s3-bucket-policy.yaml)
-
-- ✅ Encryption enforcement on uploads
-- ✅ Secure transport enforcement (HTTPS only)
-- ✅ Optional/conditional policy rules
+- **`cloudformation/template.yaml`** — Root stack template (nested stacks, outputs)
+- **`cloudformation/parameters.json`** — Parameter values used for the lab
+- **`cloudformation/stack-config.json`** — Stack name and the template and parameter file paths
 
 ## Parameters
 
-### S3 Bucket Parameters
-
 | Parameter | Type | Default | Description |
-| ----------- | ------ | --------- | ------------- |
-| `ProjectName` | String | — | Project name to use as bucket prefix (required) |
-| `BucketBaseName` | String | `cfn-bucket` | Base name for S3 bucket |
-| `environment` | String | `devl` | Deployment environment (devl, stag, prod) |
-| `CiSuffix` | String | `""` | Optional CI suffix to append to bucket name |
+| --------- | ---- | ------- | ----------- |
+| `NestedStacksS3BucketName` | String | `subhamay-cfn-templates-bucket-270453428528-us-east-1` | S3 bucket that holds the nested templates |
+| `ProjectName` | String | `lab02` | Project name used in resource names (lowercase letters, numbers, hyphens; max 20) |
+| `Environment` | String | `devl` | Deployment environment (`devl`, `stag`, `prod`) |
+| `VPCCidrBlock` | String | `10.100.0.0/16` | CIDR block for the VPC |
+| `PublicSubnetCidrBlocks` | String | `10.100.0.0/20` | CIDR block for the public subnet |
+| `PrivateSubnetCidrBlocks` | String | `10.100.16.0/20` | CIDR block for the private subnet |
+| `PublicSshSgName` | String | `ssh-public-sg` | Base name for the SSH-only security group in the public subnet (lowercase letters, numbers, hyphens; max 30) |
+| `PrivateSshSgName` | String | `ssh-private-sg` | Base name for the SSH-only security group in the private subnet (lowercase letters, numbers, hyphens; max 30) |
+| `CiSuffix` | String | `""` | Optional suffix appended to resource names for CI deployments |
 
-### S3 Bucket Policy Parameters
+`ImageId`, `InstanceType` and `KeyPairName` are commented out in the template, so they are not parameters.
 
-**Generic (Standalone) Mode:**
-
-| Parameter | Type | Description |
-| ----------- | ------ | ------------- |
-| `BucketName` | String | Direct bucket name (use for any bucket) |
-
-**Integrated Mode (with bucket template):**
-
-| Parameter | Type | Default | Description |
-| ----------- | ------ | --------- | ------------- |
-| `ProjectName` | String | — | Project name (must match bucket template) |
-| `BucketBaseName` | String | `cfn-bucket` | Base name (must match bucket template) |
-| `environment` | String | `devl` | Environment (must match bucket template) |
-| `CiSuffix` | String | `""` | CI suffix (must match bucket template) |
-
-**Usage:** If `BucketName` is provided (non-empty), it takes precedence. Otherwise, the bucket name is constructed from ProjectName/BucketBaseName/environment/CiSuffix.
+`cloudformation/parameters.json` sets `ProjectName` to `networking`, `Environment` to `devl`, `VPCCidrBlock` to `10.11.0.0/16`, `PublicSubnetCidrBlocks` to `10.11.0.0/20`, `PrivateSubnetCidrBlocks` to `10.11.48.0/20`, and `CiSuffix` to an empty string. It does not set the security group names, so their defaults apply.
 
 ## Outputs
 
-### S3 Bucket Template Outputs
+- `VpcId` — ID of the VPC
+- `InternetGatewayId` — ID of the Internet Gateway
+- `PublicSubnet1Arn` — ID of the public subnet (the template's description says ARN, but the value is the subnet ID)
+- `PrivateSubnet1Arn` — ID of the private subnet (the template's description says ARN, but the value is the subnet ID)
+- `PublicSshSgId` — ID of the public subnet SSH security group
+- `PublicSshSgName` — Name of the public subnet SSH security group
 
-- `S3BucketName` — S3 bucket name
-- `S3BucketArn` — S3 bucket ARN
-
-### S3 Bucket Policy Template Outputs
-
-- `BucketName` — Bucket name with policy applied
-- `PolicyStatus` — Policy application status (Applied)
+The template also has commented-out outputs for `PrivateSshSgId`, `PrivateSshSgName`, `EC2InstanceId` and `EC2InstancePublicIp`. They are not deployed.
 
 ## Usage
 
-### 1. Upload Templates to S3
+### 1. Prerequisites
+
+- An S3 bucket in `us-east-1` containing the nested templates at the keys listed in [Architecture](#architecture)
+- AWS CLI credentials with permission to create CloudFormation, VPC, and security group resources, and `s3:GetObject` on the template bucket
+
+### 2. Upload Nested Templates to S3
+
+The nested templates are not in this repository. Upload them from wherever they are maintained, using the keys below:
 
 ```bash
-aws s3 cp templates/s3-bucket.yaml s3://your-cfn-bucket/templates/s3-bucket.yaml
-aws s3 cp templates/s3-bucket-policy.yaml s3://your-cfn-bucket/templates/s3-bucket-policy.yaml
+aws s3 cp cfn-nested-aws-vpc/template.yaml \
+  s3://subhamay-cfn-templates-bucket-270453428528-us-east-1/cfn-nested-aws-vpc/template.yaml
+aws s3 cp cfn-nested-aws-subnets/template.yaml \
+  s3://subhamay-cfn-templates-bucket-270453428528-us-east-1/cfn-nested-aws-subnets/template.yaml
+aws s3 cp cfn-nested-aws-ec2-security-group/template.yaml \
+  s3://subhamay-cfn-templates-bucket-270453428528-us-east-1/cfn-nested-aws-ec2-security-group/template.yaml
 ```
 
-### 2. Reference from Parent Stack
-
-In your parent/root CloudFormation template:
-
-```yaml
-S3BucketNestedStack:
-  Type: AWS::CloudFormation::Stack
-  Properties:
-    TemplateURL: https://s3.amazonaws.com/your-cfn-bucket/templates/s3-bucket.yaml
-    Parameters:
-      ProjectName: !Ref ProjectName
-      BucketBaseName: cfn-bucket
-      environment: !Ref Environment
-      CiSuffix: !Ref CiSuffix
-    Tags:
-      - Key: Environment
-        Value: !Ref Environment
-
-S3PolicyNestedStack:
-  Type: AWS::CloudFormation::Stack
-  DependsOn: S3BucketNestedStack
-  Properties:
-    TemplateURL: https://s3.amazonaws.com/your-cfn-bucket/templates/s3-bucket-policy.yaml
-    Parameters:
-      BucketName: !GetAtt S3BucketNestedStack.Outputs.S3BucketName
-      ProjectName: ""
-      BucketBaseName: cfn-bucket
-      environment: !Ref Environment
-      CiSuffix: !Ref CiSuffix
-    Tags:
-      - Key: Environment
-        Value: !Ref Environment
-
-Outputs:
-  BucketName:
-    Value: !GetAtt S3BucketNestedStack.Outputs.S3BucketName
-  BucketArn:
-    Value: !GetAtt S3BucketNestedStack.Outputs.S3BucketArn
-```
-
-### 3. Deploy Using AWS CLI
-
-#### Option A: Deploy Bucket Only
+### 3. Deploy the Root Stack
 
 ```bash
-# Development (without CI prefix)
-aws cloudformation create-stack \
-  --stack-name cfn-s3-bucket-dev \
-  --template-body file://templates/s3-bucket.yaml \
-  --parameters file://parameters/dev.json
-
-# Staging (without CI prefix)
-aws cloudformation create-stack \
-  --stack-name cfn-s3-bucket-stag \
-  --template-body file://templates/s3-bucket.yaml \
-  --parameters file://parameters/staging.json
-
-# Production (without CI prefix)
-aws cloudformation create-stack \
-  --stack-name cfn-s3-bucket-prod \
-  --template-body file://templates/s3-bucket.yaml \
-  --parameters file://parameters/prod.json
+aws cloudformation deploy \
+  --template-file cloudformation/template.yaml \
+  --stack-name aws-lab02-private-subnet-ec2-access-stack \
+  --region us-east-1
 ```
 
-#### Option B: Deploy Bucket + Policy (Recommended)
+To use the values in `cloudformation/parameters.json`, or any other parameter, add them to `--parameter-overrides` as `Name=Value` pairs, for example `--parameter-overrides ProjectName=networking`.
+
+### 4. Verify the Outputs
 
 ```bash
-# Deploy bucket first
-aws cloudformation create-stack \
-  --stack-name cfn-s3-bucket-dev \
-  --template-body file://templates/s3-bucket.yaml \
-  --parameters file://parameters/dev.json
-
-# Wait for bucket to be created
-aws cloudformation wait stack-create-complete --stack-name cfn-s3-bucket-dev
-
-# Get the bucket name from stack outputs
-BUCKET_NAME=$(aws cloudformation describe-stacks \
-  --stack-name cfn-s3-bucket-dev \
-  --query 'Stacks[0].Outputs[?OutputKey==`S3BucketName`].OutputValue' \
-  --output text)
-
-#### Using Integrated Mode (with bucket template parameters)
-
-```bash
-aws cloudformation create-stack \
-  --stack-name cfn-s3-policy-dev \
-  --template-body file://templates/s3-bucket-policy.yaml \
-  --parameters file://parameters/policy-dev.json
+aws cloudformation describe-stacks \
+  --stack-name aws-lab02-private-subnet-ec2-access-stack \
+  --query 'Stacks[0].Outputs' \
+  --output table
 ```
 
-#### Using Generic Mode (standalone with direct bucket name)
+### 5. Clean Up
 
 ```bash
-aws cloudformation create-stack \
-  --stack-name cfn-s3-policy-dev \
-  --template-body file://templates/s3-bucket-policy.yaml \
-  --parameters \
-    ParameterKey=BucketName,ParameterValue=my-existing-bucket \
-    ParameterKey=ProjectName,ParameterValue=""
+aws cloudformation delete-stack --stack-name aws-lab02-private-subnet-ec2-access-stack
+aws cloudformation wait stack-delete-complete --stack-name aws-lab02-private-subnet-ec2-access-stack
 ```
 
-#### Option C: Deploy with CI Suffix
+## Resource Naming Convention
+
+**VPC name tag:**
 
 ```bash
-# Development with CI suffix (e.g., for GitLab CI)
-aws cloudformation create-stack \
-  --stack-name cfn-s3-bucket-dev-ci \
-  --template-body file://templates/s3-bucket.yaml \
-  --parameters \
-    ParameterKey=ProjectName,ParameterValue=myproject \
-    ParameterKey=BucketBaseName,ParameterValue=cfn-bucket \
-    ParameterKey=environment,ParameterValue=devl \
-    ParameterKey=CiSuffix,ParameterValue=$CI_PIPELINE_ID
+{ProjectName}-{Environment}-{Region}[-{CiSuffix}]
 ```
 
-## Bucket Naming Convention
-
-The templates generate bucket names using the following pattern:
-
-**Without CI Suffix:**
-
-```bash
-{ProjectName}-{BucketBaseName}-{AccountId}-{Environment}-{Region}
-```
-
-Example: `myproject-cfn-bucket-123456789012-devl-us-east-1`
-
-**With CI Suffix:**
-
-```bash
-{ProjectName}-{BucketBaseName}-{AccountId}-{Environment}-{Region}-{CiSuffix}
-```
-
-Example: `myproject-cfn-bucket-123456789012-devl-us-east-1-pipeline-12345`
+Example: `networking-devl-us-east-1` (with the values in `parameters.json`)
 
 ## Best Practices Implemented
 
-- ✅ Versioning enabled by default
-- ✅ Public access blocked by default
-- ✅ Smart bucket naming with project prefix, account ID, environment, and region
+- ✅ Modular design with nested stacks for the VPC, subnets, and security groups
+- ✅ Public and private subnets created from the same subnet template and separated by `SubnetQualifier`
+- ✅ SSH to the private subnet is limited to the public SSH security group
+- ✅ Consistent tagging (`Environment`, `Project`, `Component`, `ManagedBy`)
 - ✅ Optional CI suffix support for unique deployments
-- ✅ Optional policy enforcement (encryption and secure transport)
-- ✅ Export values for cross-stack references
 
 ## License
 
