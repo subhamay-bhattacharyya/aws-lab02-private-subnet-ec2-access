@@ -1,0 +1,67 @@
+name: Delete Stack
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "GitHub environment to delete the stack from"
+        required: true
+        type: choice
+        default: devl
+        options:
+          - ci
+          - devl
+          - test
+          - prod
+      confirm-stack-name:
+        description: "Type the stack name from cloudformation/stack-config.json to confirm deletion"
+        required: true
+        type: string
+
+permissions:
+  actions: write
+  contents: read
+  id-token: write
+
+jobs:
+  load-config:
+    name: Load Stack Configuration
+    runs-on: ubuntu-26.04
+    outputs:
+      stack-name: ${{ steps.config.outputs.stack-name }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: config
+        run: |
+          CONFIG=$(cat cloudformation/stack-config.json)
+          STACK_NAME=$(echo "$CONFIG" | jq -r '.stackName')
+          echo "stack-name=$STACK_NAME" >> $GITHUB_OUTPUT
+
+          # Write to GitHub step summary
+          {
+            echo "## Stack Deletion Target"
+            echo ""
+            echo "| Property | Value |"
+            echo "|----------|-------|"
+            echo "| Environment | \`${{ inputs.environment }}\` |"
+            echo "| Stack Name | \`$STACK_NAME\` |"
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: Verify Confirmation
+        env:
+          CONFIRM: ${{ inputs.confirm-stack-name }}
+          STACK_NAME: ${{ steps.config.outputs.stack-name }}
+        run: |
+          if [[ "$CONFIRM" != "$STACK_NAME" ]]; then
+            echo "::error::Confirmation '$CONFIRM' does not match stack name '$STACK_NAME'. Nothing was deleted."
+            exit 1
+          fi
+          echo "✅ Confirmation matches stack name: $STACK_NAME"
+
+  delete:
+    name: Delete Stack
+    needs: load-config
+    uses: subhamay-bhattacharyya-gha/cfn-delete-wf/.github/workflows/cfn-delete.yaml@main
+    with:
+      environment: ${{ inputs.environment }}
+      stack-name: ${{ needs.load-config.outputs.stack-name }}

@@ -1,28 +1,44 @@
 AWSTemplateFormatVersion: '2010-09-09'
 
-Description: 'Root CloudFormation template that invokes a nested S3 bucket stack'
+Description: |
+  Root CloudFormation template for AWS Networking Lab 02. Creates:
+  - VPC with DNS support and hostnames, and an Internet Gateway (nested VPC stack)
+  - Public subnet with a default route to the Internet Gateway (nested public subnets stack)
+  - Private subnet (nested private subnets stack)
+  - Public SSH security group, open to 0.0.0.0/0 (nested public security group stack)
+  - Private SSH security group, SSH only from the public SSH security group (nested private security group stack)
+  - EC2 instance in the public subnet (nested public EC2 instance stack)
+  - EC2 instance in the private subnet (nested private EC2 instance stack)
 
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
       - Label:
-          default: "Nested Stack Configuration"
-        Parameters:
-          - NestedStacksS3BucketName
-      - Label:
-          default: "Common Bucket Configuration"
+          default: "Project Configuration"
         Parameters:
           - ProjectName
           - Environment
       - Label:
-          default: "Bucket Configuration"
+          default: "Nested Stack Configuration"
         Parameters:
-          - BucketBaseName
+          - NestedStacksS3BucketName
       - Label:
-          default: "Encryption Configuration"
+          default: "VPC Configuration"
         Parameters:
-          - KmsKey
-          - EnableBucketKey
+          - VPCCidrBlock
+          - PublicSubnetCidrBlocks
+          - PrivateSubnetCidrBlocks
+      - Label:
+          default: "Security Group Configuration"
+        Parameters:
+          - PublicSshSgName
+          - PrivateSshSgName
+      - Label:
+          default: "EC2 Instance Configuration"
+        Parameters:
+          - ImageId
+          - InstanceType
+          - KeyPairName
       - Label:
           default: "Advanced Configuration"
         Parameters:
@@ -32,16 +48,26 @@ Metadata:
         default: "S3 Bucket Name"
       ProjectName:
         default: "Project Name"
-      BucketBaseName:
-        default: "Bucket Base Name"
       Environment:
         default: "Environment"
+      VPCCidrBlock:
+        default: "VPC CIDR block (e.g., 10.0.0.0/16)"
+      PublicSubnetCidrBlocks:
+        default: "Public Subnet CIDR blocks (comma-separated, e.g., 10.10.0.0/20)"
+      PrivateSubnetCidrBlocks:
+        default: "Private Subnet CIDR blocks (comma-separated, e.g., 10.10.0.0/20)"
+      PublicSshSgName:
+        default: "SSH Only Security Group Public Subnet Base Name"
+      PrivateSshSgName:
+        default: "SSH Only Security Group Private Subnet Base Name"
+      ImageId:
+        default: "EC2 Image (AMI) SSM Parameter"
+      InstanceType:
+        default: "EC2 Instance Type"
+      KeyPairName:
+        default: "EC2 Key Pair Name (for SSH)"
       CiSuffix:
         default: "CI Suffix"
-      KmsKey:
-        default: "KMS Key (ARN / Alias)"
-      EnableBucketKey:
-        default: "Enable S3 Bucket Key"
 
 Parameters:
   NestedStacksS3BucketName:
@@ -55,83 +81,371 @@ Parameters:
 
   ProjectName:
     Type: String
-    Default: "ztc-etl"
+    Default: "netwk-lab02"
     Description: "Project name to use as a bucket prefix"
     MinLength: 1
     MaxLength: 20
     AllowedPattern: "^[a-z0-9-]+$"
     ConstraintDescription: "Project name must be lowercase letters, numbers, and hyphens only"
 
-  BucketBaseName:
-    Type: String
-    Default: "csv-raw-data"
-    MinLength: 1
-    MaxLength: 20
-    AllowedPattern: "^[a-z0-9.-]+$"
-    ConstraintDescription: "Bucket base name must be 1-20 characters and can only contain lowercase letters, numbers, hyphens, and dots"
-    Description: Base name for the S3 bucket (account ID, environment, and region will be appended)
-
-  KmsKey:
-    Type: String
-    Default: ""
-    AllowedPattern: "^(alias/[a-zA-Z0-9_-]+|arn:aws:kms:[a-z0-9-]+:[0-9]+:key/[a-zA-Z0-9-]+|[a-zA-Z0-9_-]+)?$"
-    ConstraintDescription: "KMS Key can be a key name (e.g., my-key, auto-converted to alias/my-key), a KMS key alias (e.g., alias/my-key), or a full KMS key ARN (e.g., arn:aws:kms:region:account:key/key-id), or leave empty for no KMS encryption"
-    Description: "Optional KMS Key for S3 bucket encryption. Accepts: key name (my-key), alias (alias/my-key), or ARN (arn:aws:kms:region:account:key/key-id). Plain key names are auto-converted to aliases."
-
-  EnableBucketKey:
-    Type: String
-    Default: "false"
-    AllowedValues:
-      - "true"
-      - "false"
-    Description: "Enable S3 Bucket Key for KMS encryption cost optimization (only applicable when KmsKey is provided)"
-
   Environment:
     Type: String
     Default: devl
-    Description: "Deployment environment for the S3 bucket"
+    Description: "Deployment environment"
+    AllowedValues:
+      - devl
+      - stag
+      - prod
+    ConstraintDescription: "Environment must be one of: devl, stag, prod"
+
+  VPCCidrBlock:
+    Type: String
+    Default: '10.100.0.0/16'
+    Description: CIDR block for the VPC (e.g., 10.0.0.0/16)
+    AllowedPattern: '^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$'
+    ConstraintDescription: Must be valid CIDR block
+
+  PublicSubnetCidrBlocks:
+    Type: String
+    Default: "10.100.0.0/20"
+    Description: "Comma-separated list of public subnet CIDR blocks (e.g., 10.10.0.0/20)"
+    AllowedPattern: '^(\d{1,3}\.){3}\d{1,3}/\d{1,2}(,\s*(\d{1,3}\.){3}\d{1,3}/\d{1,2})*$'
+    ConstraintDescription: "Must be valid CIDR blocks, comma-separated"
+
+  PrivateSubnetCidrBlocks:
+    Type: String
+    Default: "10.100.16.0/20"
+    Description: "Comma-separated list of private subnet CIDR blocks (e.g., 10.10.16.0/20)"
+    AllowedPattern: '^(\d{1,3}\.){3}\d{1,3}/\d{1,2}(,\s*(\d{1,3}\.){3}\d{1,3}/\d{1,2})*$'
+    ConstraintDescription: "Must be valid CIDR blocks, comma-separated"
 
   CiSuffix:
     Type: String
     Default: ""
     Description: "Optional CI suffix to append to the bucket name"
 
+  PublicSshSgName:
+    Type: String
+    Default: "ssh-public-sg"
+    Description: "Base name for the SSH-only security group in the public subnet, combined with the project and environment names"
+    MinLength: 1
+    MaxLength: 30
+    AllowedPattern: "^[a-z0-9-]+$"
+    ConstraintDescription: "Security group base name must be lowercase letters, numbers, and hyphens only"
+
+  PrivateSshSgName:
+    Type: String
+    Default: "ssh-private-sg"
+    Description: "Base name for the SSH-only security group in the private subnet, combined with the project and environment names"
+    MinLength: 1
+    MaxLength: 30
+    AllowedPattern: "^[a-z0-9-]+$"
+    ConstraintDescription: "Security group base name must be lowercase letters, numbers, and hyphens only"
+
+  ImageId:
+    Type: String
+    Default: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+    Description: "SSM parameter that resolves to the EC2 image (AMI) ID for the instance. The default resolves to the latest Amazon Linux 2023 x86_64 AMI in the deployment region"
+
+  InstanceType:
+    Type: String
+    Default: "t3.micro"
+    AllowedValues:
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t2.micro
+    Description: "EC2 instance type"
+    ConstraintDescription: "Must be one of the allowed instance types"
+
+  KeyPairName:
+    Type: String
+    Default: "networking-lab"
+    Description: "Name of an existing EC2 key pair to use for SSH access. The console lists the key pairs available in this account and region"
+    ConstraintDescription: "Must be the name of an existing EC2 key pair in this account and region"
+
+
+Conditions:
+  HasCiSuffix: !Not [!Equals [!Ref CiSuffix, ""]]
+
 Resources:
-  S3BucketNestedStack:
+  
+  VpcNestedStack:
     Type: AWS::CloudFormation::Stack
     DeletionPolicy: Delete
     UpdateReplacePolicy: Delete
     Metadata:
       com.aws.cloudformation.Context:
-        why: "Invokes the nested S3 bucket CloudFormation template to create a versioned, encrypted S3 bucket with public access blocking and optional logging/website configuration"
+        why: "Invokes the nested VPC CloudFormation template to create the VPC (CIDR from VPCCidrBlock, DNS support and hostnames enabled) and an attached Internet Gateway; the public subnet, route table, and web security group attach to this VPC"
         must:
           - "Nested template must be accessible at the specified S3 location"
           - "IAM principal must have s3:GetObject permission on the template S3 bucket"
-          - "CloudFormation service must have permission to assume the required IAM role for S3 and KMS operations"
     Properties:
-      TemplateURL: !Sub https://${NestedStacksS3BucketName}.s3.us-east-1.amazonaws.com/cfn-nested-aws-s3-bucket/template.yaml
+      TemplateURL: !Sub "https://${NestedStacksS3BucketName}.s3.us-east-1.amazonaws.com/cfn-nested-aws-vpc/template.yaml"
       Parameters:
-        ProjectName: !Ref ProjectName
-        BucketBaseName: !Ref BucketBaseName
-        KmsKey: !Ref KmsKey
-        EnableBucketKey: !Ref EnableBucketKey
-        Environment: !Ref Environment
-        CiSuffix: !Ref CiSuffix
+          VPCCidrBlock: !Ref VPCCidrBlock
+          EnableDnsHostnames: "true"
+          EnableInternetGateway: "true"
+          VpcNameTag: !If
+            - HasCiSuffix
+            - !Sub "${ProjectName}-${Environment}-${AWS::Region}-${CiSuffix}"
+            - !Sub "${ProjectName}-${Environment}-${AWS::Region}"
+          Environment: !Ref Environment
       Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: "Implement VPC with single public subnet and EC2 SSH"
+        - Key: Component
+          Value: NetworkingVPC
         - Key: ManagedBy
           Value: RootStack
-        - Key: NestedStackPurpose
-          Value: S3BucketCreation
+      TimeoutInMinutes: 10
+
+  PublicSubnetsStack:
+    Type: AWS::CloudFormation::Stack
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: "Invokes the nested subnets CloudFormation template to create one public subnet in us-east-1a (CIDR from SubnetCidrBlocks) in the VPC created by the VPC nested stack, with a route table holding a default route to the Internet Gateway"
+        must:
+          - "Nested template must be accessible at the specified S3 location"
+          - "IAM principal must have s3:GetObject permission on the template S3 bucket"
+          - "VpcNestedStack must complete first so that the VPC and Internet Gateway IDs are available"
+    Properties:
+      TemplateURL: !Sub "https://${NestedStacksS3BucketName}.s3.us-east-1.amazonaws.com/cfn-nested-aws-subnets/template.yaml"
+      Parameters:
+        VpcId: !GetAtt VpcNestedStack.Outputs.VPCId
+        VpcName: !If
+          - HasCiSuffix
+          - !Sub "${ProjectName}-${Environment}-${CiSuffix}"
+          - !Sub "${ProjectName}-${Environment}"
+        AvailabilityZones: "us-east-1a"
+        SubnetCidrBlocks: !Ref PublicSubnetCidrBlocks
+        SubnetCount: "1"
+        SubnetQualifier: "public"
+        InternetGatewayId: !GetAtt VpcNestedStack.Outputs.InternetGatewayId
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: "Implement VPC with single public subnet and EC2 SSH"
+        - Key: Component
+          Value: PublicSubnetsNestedStack
+        - Key: ManagedBy
+          Value: RootStack
+      TimeoutInMinutes: 10
+
+  PrivateSubnetsStack:
+    Type: AWS::CloudFormation::Stack
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: "Invokes the nested subnets CloudFormation template to create one private subnet in us-east-1a (CIDR from SubnetCidrBlocks) in the VPC created by the VPC nested stack, with a route table holding a default route to the Internet Gateway"
+        must:
+          - "Nested template must be accessible at the specified S3 location"
+          - "IAM principal must have s3:GetObject permission on the template S3 bucket"
+          - "VpcNestedStack must complete first so that the VPC and Internet Gateway IDs are available"
+    Properties:
+      TemplateURL: !Sub "https://${NestedStacksS3BucketName}.s3.us-east-1.amazonaws.com/cfn-nested-aws-subnets/template.yaml"
+      Parameters:
+        VpcId: !GetAtt VpcNestedStack.Outputs.VPCId
+        VpcName: !If
+          - HasCiSuffix
+          - !Sub "${ProjectName}-${Environment}-${CiSuffix}"
+          - !Sub "${ProjectName}-${Environment}"
+        AvailabilityZones: "us-east-1a"
+        SubnetCidrBlocks: !Ref PrivateSubnetCidrBlocks
+        SubnetCount: "1"
+        SubnetQualifier: "private"
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: "Implement VPC with single public subnet and EC2 SSH"
+        - Key: Component
+          Value: PrivateSubnetsNestedStack
+        - Key: ManagedBy
+          Value: RootStack
+      TimeoutInMinutes: 10
+
+  PublicSshSgStack:
+    Type: AWS::CloudFormation::Stack
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: "Invokes the nested security groups CloudFormation template to create the SSH-only security group with inbound access from 0.0.0.0/0 in the VPC created by the VPC nested stack"
+        must:
+          - "Nested template must be accessible at the specified S3 location"
+          - "IAM principal must have s3:GetObject permission on the template S3 bucket"
+          - "VpcNestedStack must complete first so that the VPC ID is available"
+    Properties:
+      TemplateURL: !Sub "https://${NestedStacksS3BucketName}.s3.us-east-1.amazonaws.com/cfn-nested-aws-ec2-security-group/template.yaml"
+      Parameters:
+        VpcId: !GetAtt VpcNestedStack.Outputs.VPCId
+        ProjectName: !Ref ProjectName
+        SecurityGroupBaseName: !Ref PublicSshSgName
+        SecurityGroupDescription: "Security group for SSH-only access"
+        CiSuffix: !Ref CiSuffix
+        Rule1RuleSet: "SSHOnly"
+        Rule1SourceCidr: "0.0.0.0/0"
+        Rule2RuleSet: "None"
+        Rule3RuleSet: "None"
+        Rule4RuleSet: "None"
+        Rule5RuleSet: "None"
+        Environment: !Ref Environment
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: "Implement VPC with single public subnet and EC2 SSH"
+        - Key: Component
+          Value: NetworkingSSHOnlySecurityGroup
+        - Key: ManagedBy
+          Value: RootStack
+      TimeoutInMinutes: 10
+
+  PrivateSshSgStack:
+    Type: AWS::CloudFormation::Stack
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: "Invokes the nested security groups CloudFormation template to create the SSH-only security group with inbound access from the public SSH security group in the VPC created by the VPC nested stack"
+        must:
+          - "Nested template must be accessible at the specified S3 location"
+          - "IAM principal must have s3:GetObject permission on the template S3 bucket"
+          - "VpcNestedStack must complete first so that the VPC ID is available"
+    Properties:
+      TemplateURL: !Sub "https://${NestedStacksS3BucketName}.s3.us-east-1.amazonaws.com/cfn-nested-aws-ec2-security-group/template.yaml"
+      Parameters:
+        VpcId: !GetAtt VpcNestedStack.Outputs.VPCId
+        ProjectName: !Ref ProjectName
+        SecurityGroupBaseName: !Ref PrivateSshSgName
+        SecurityGroupDescription: "Security group for SSH-only access"
+        CiSuffix: !Ref CiSuffix
+        Rule1RuleSet: "SSHOnly"
+        Rule1SourceSecurityGroupId: !GetAtt PublicSshSgStack.Outputs.SecurityGroupId
+        Rule2RuleSet: "None"
+        Rule3RuleSet: "None"
+        Rule4RuleSet: "None"
+        Rule5RuleSet: "None"
+        Environment: !Ref Environment
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: "Implement VPC with single public subnet and EC2 SSH"
+        - Key: Component
+          Value: NetworkingSSHOnlySecurityGroupPrivateSubnet
+        - Key: ManagedBy
+          Value: RootStack
+      TimeoutInMinutes: 10
+      
+  PublicEc2Instance:
+    Type: AWS::CloudFormation::Stack
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: "Invokes the nested EC2 instance CloudFormation template to launch the instance in the public subnet created by the public subnets nested stack, with the web security group attached and the key pair from KeyPairName"
+        must:
+          - "Nested template must be accessible at the specified S3 location"
+          - "IAM principal must have s3:GetObject permission on the template S3 bucket"
+          - "PublicSubnetsNestedStack and WebSecurityGroupNestedStack must complete first so that the subnet and security group IDs are available"
+    Properties:
+      TemplateURL: !Sub "https://${NestedStacksS3BucketName}.s3.us-east-1.amazonaws.com/cfn-nested-aws-ec2-instance/template.yaml"
+      Parameters:
+        ProjectName: !Ref ProjectName
+        InstanceBaseName: "public-ec2"
+        Environment: !Ref Environment
+        CiSuffix: !Ref CiSuffix
+        ImageId: !Ref ImageId
+        InstanceType: !Ref InstanceType
+        KeyName: !Ref KeyPairName
+        SubnetId: !GetAtt PublicSubnetsStack.Outputs.SubnetId1
+        SecurityGroupIds: !GetAtt PublicSshSgStack.Outputs.SecurityGroupId
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: "Implement VPC with single public subnet and EC2 SSH"
+        - Key: Component
+          Value: NetworkingEC2Instance
+        - Key: ManagedBy
+          Value: RootStack
+      TimeoutInMinutes: 10
+
+  PrivateEc2Instance:
+    Type: AWS::CloudFormation::Stack
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: "Invokes the nested EC2 instance CloudFormation template to launch the instance in the private subnet created by the private subnets nested stack, with the web security group attached and the key pair from KeyPairName"
+        must:
+          - "Nested template must be accessible at the specified S3 location"
+          - "IAM principal must have s3:GetObject permission on the template S3 bucket"
+          - "PrivateSubnetsNestedStack and PrivateSshSgNestedStack must complete first so that the subnet and security group IDs are available"
+    Properties:
+      TemplateURL: !Sub "https://${NestedStacksS3BucketName}.s3.us-east-1.amazonaws.com/cfn-nested-aws-ec2-instance/template.yaml"
+      Parameters:
+        ProjectName: !Ref ProjectName
+        InstanceBaseName: "private-ec2"
+        Environment: !Ref Environment
+        CiSuffix: !Ref CiSuffix
+        ImageId: !Ref ImageId
+        InstanceType: !Ref InstanceType
+        SubnetId: !GetAtt PrivateSubnetsStack.Outputs.SubnetId1
+        SecurityGroupIds: !GetAtt PrivateSshSgStack.Outputs.SecurityGroupId
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: "Implement VPC with single public subnet and EC2 SSH"
+        - Key: Component
+          Value: NetworkingEC2Instance
+        - Key: ManagedBy
+          Value: RootStack
+      TimeoutInMinutes: 10
 
 Outputs:
-  NestedStackId:
-    Description: "ID of the nested stack"
-    Value: !Ref S3BucketNestedStack
 
-  S3BucketName:
-    Description: "Name of the S3 bucket created by the nested stack"
-    Value: !GetAtt S3BucketNestedStack.Outputs.S3BucketName
+  VpcId:
+    Description: "ID of the VPC created by the nested stack"
+    Value: !GetAtt VpcNestedStack.Outputs.VPCId
 
-  S3BucketArn:
-    Description: "ARN of the S3 bucket created by the nested stack"
-    Value: !GetAtt S3BucketNestedStack.Outputs.S3BucketArn
+  InternetGatewayId:
+    Description: "ID of the Internet Gateway attached to the VPC created by the nested stack"
+    Value: !GetAtt VpcNestedStack.Outputs.InternetGatewayId
+
+  PublicSubnet1Arn:
+    Description: "ARN of public subnet 1 created by the nested subnets stack"
+    Value: !GetAtt PublicSubnetsStack.Outputs.SubnetId1
+
+  PrivateSubnet1Arn:
+    Description: "ARN of private subnet 1 created by the nested subnets stack"
+    Value: !GetAtt PrivateSubnetsStack.Outputs.SubnetId1
+
+  PublicSshSgId:
+    Description: "ID of the SSH-only security group created by the nested security groups stack"
+    Value: !GetAtt PublicSshSgStack.Outputs.SecurityGroupId
+
+  PublicSshSgName:
+    Description: "Name of the SSH-only security group created by the nested security groups stack"
+    Value: !GetAtt PublicSshSgStack.Outputs.SecurityGroupName
+
+  PrivateSshSgId:
+    Description: "ID of the SSH-only security group created by the nested security groups stack"
+    Value: !GetAtt PrivateSshSgStack.Outputs.SecurityGroupId
+
+  PrivateSshSgName:
+    Description: "Name of the SSH-only security group created by the nested security groups stack"
+    Value: !GetAtt PrivateSshSgStack.Outputs.SecurityGroupName 
+
+  PrivateEC2InstanceId:
+    Description: "ID of the EC2 instance launched in the private subnet"
+    Value: !Ref PrivateEc2Instance

@@ -1,0 +1,61 @@
+name: Deploy Stack
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "GitHub environment to deploy into"
+        required: true
+        type: choice
+        default: devl
+        options:
+          - ci
+          - devl
+          - test
+          - prod
+
+permissions:
+  actions: write
+  contents: read
+  id-token: write
+
+jobs:
+  load-config:
+    name: Load Stack Configuration
+    runs-on: ubuntu-26.04
+    outputs:
+      stack-name: ${{ steps.config.outputs.stack-name }}
+      template-file: ${{ steps.config.outputs.template-file }}
+      parameter-file: ${{ steps.config.outputs.parameter-file }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: config
+        run: |
+          CONFIG=$(cat cloudformation/stack-config.json)
+          STACK_NAME=$(echo "$CONFIG" | jq -r '.stackName')
+          TEMPLATE_FILE=$(echo "$CONFIG" | jq -r '.templateFile')
+          PARAMETER_FILE=$(echo "$CONFIG" | jq -r '.parameterFile')
+          echo "stack-name=$STACK_NAME" >> $GITHUB_OUTPUT
+          echo "template-file=$TEMPLATE_FILE" >> $GITHUB_OUTPUT
+          echo "parameter-file=$PARAMETER_FILE" >> $GITHUB_OUTPUT
+
+          # Write to GitHub step summary
+          {
+            echo "## Stack Configuration"
+            echo ""
+            echo "| Property | Value |"
+            echo "|----------|-------|"
+            echo "| Stack Name | \`$STACK_NAME\` |"
+            echo "| Template File | \`$TEMPLATE_FILE\` |"
+            echo "| Parameter File | \`$PARAMETER_FILE\` |"
+          } >> $GITHUB_STEP_SUMMARY
+
+  deploy:
+    name: Deploy Stack
+    needs: load-config
+    uses: subhamay-bhattacharyya-gha/cfn-deploy-wf/.github/workflows/cfn-deploy.yaml@main
+    with:
+      environment: ${{ inputs.environment }}
+      stack-name: ${{ needs.load-config.outputs.stack-name }}
+      template-file: ${{ needs.load-config.outputs.template-file }}
+      parameters-file: ${{ needs.load-config.outputs.parameter-file }}
