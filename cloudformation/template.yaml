@@ -143,7 +143,7 @@ Parameters:
     ConstraintDescription: "Security group base name must be lowercase letters, numbers, and hyphens only"
 
   ImageId:
-    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Type: String
     Default: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
     Description: "SSM parameter that resolves to the EC2 image (AMI) ID for the instance. The default resolves to the latest Amazon Linux 2023 x86_64 AMI in the deployment region"
 
