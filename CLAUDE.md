@@ -4,263 +4,158 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-This is a **CloudFormation template repository** that provides reusable nested stack templates for deploying S3 buckets with security best practices. Templates follow the nested stack pattern and are designed to be referenced by parent CloudFormation stacks.
+This is the **AWS Networking Lab 02** repository: a CloudFormation root stack that builds a VPC with one public and one private subnet in `us-east-1a`, two SSH-only security groups, and one EC2 instance in each subnet. The root stack deploys every resource through nested stacks whose templates live in an S3 bucket, not in this repo.
 
 **Key characteristics:**
 
-- Nested CloudFormation templates (referenced via `TemplateURL`)
-- Parameterized bucket naming with account ID, environment, and region
-- S3 security defaults: versioning enabled, public access blocked
-- Optional S3 bucket policy enforcement (encryption, secure transport)
-- Automated semantic versioning and releases
-- AWS OIDC authentication for CI/CD deployments
+- Root stack template with nested stacks referenced via `TemplateURL`
+- Nested templates are stored in the S3 bucket named by `NestedStacksS3BucketName` (`us-east-1`)
+- Public SSH is open to `0.0.0.0/0`; private SSH is allowed only from the public SSH security group
+- Conventional commits drive semantic versioning and the changelog
 
 ## Project Structure
 
 ```text
-templates/
-├── s3-bucket.yaml                # Nested template: S3 bucket creation
-└── s3-bucket-policy.yaml         # Nested template: S3 bucket policy
+cloudformation/
+├── template.yaml                  # Root stack template (nested stacks, parameters, outputs)
+├── parameters.json                # Parameter values for the lab
+└── stack-config.json              # Stack name and template/parameter file paths
 
-parameters/
-├── dev.json                       # Parameters for development environment
-├── staging.json                   # Parameters for staging environment
-├── prod.json                      # Parameters for production environment
-├── policy-dev.json                # Bucket policy parameters (development)
-├── policy-staging.json            # Bucket policy parameters (staging)
-└── policy-prod.json               # Bucket policy parameters (production)
+media/
+└── architecture-diagram.jpg       # Diagram used in README.md
 
 .github/workflows/
-├── ci.yaml                        # Validates, deploys, and cleans up templates
-├── release.yaml                   # Semantic release on push to main
-└── create-branch.yaml             # Auto-create feature branches from issues
+├── ci.yaml                        # CI build (manual trigger only; calls a reusable workflow), changelog and release jobs
+├── create-branch.yaml             # Auto-create feature branches from issues
+├── claude.yaml                    # Claude Code workflow
+├── claude-code-review.yaml        # Claude Code review workflow
+├── notify.yaml                    # Notification workflow
+└── setup-environments.yaml        # GitHub environment setup
 
 scripts/plugins/
 ├── release.config.js              # Semantic-release configuration
-└── (other release plugins)        # Custom commit analysis, notes generation
+└── (other release plugins)        # Commit analysis, notes generation, publish
 
-.claude/
-├── settings.json                  # Claude Code workspace settings
-└── settings.local.json            # Local overrides
-
-.devcontainer/
-└── devcontainer.json              # Dev container setup (Node.js 20)
-
-package.json                       # Dependencies: semantic-release, commitizen
-README.md                          # Template documentation and usage examples
+.releaserc.json                    # Semantic-release plugins (branch: main)
+.claude/                           # Claude Code settings and repo skills
+.devcontainer/devcontainer.json    # Dev container setup
+CHANGELOG.md                       # Generated release changelog
+README.md                          # Lab documentation
 ```
 
-## Development Commands
+## Nested Stacks
 
-### Install dependencies
+The root stack (`cloudformation/template.yaml`) creates these nested stacks. Each one's `TemplateURL` is `https://${NestedStacksS3BucketName}.s3.us-east-1.amazonaws.com/<key>`.
+
+| Root resource | S3 key | Purpose |
+| ------------- | ------ | ------- |
+| `VpcNestedStack` | `cfn-nested-aws-vpc/template.yaml` | VPC and Internet Gateway |
+| `PublicSubnetsStack` | `cfn-nested-aws-subnets/template.yaml` | Public subnet (`SubnetQualifier: public`), given the IGW ID |
+| `PrivateSubnetsStack` | `cfn-nested-aws-subnets/template.yaml` | Private subnet (`SubnetQualifier: private`) |
+| `PublicSshSgStack` | `cfn-nested-aws-ec2-security-group/template.yaml` | SSH from `0.0.0.0/0` |
+| `PrivateSshSgStack` | `cfn-nested-aws-ec2-security-group/template.yaml` | SSH from the public SSH security group |
+| `PublicEc2Instance` | `cfn-nested-aws-ec2-instance/template.yaml` | EC2 instance in the public subnet |
+| `PrivateEc2Instance` | `cfn-nested-aws-ec2-instance/template.yaml` | EC2 instance in the private subnet |
+
+The nested templates are not in this repo. Changes to them must be uploaded to the bucket separately.
+
+## Key Files
+
+### `cloudformation/template.yaml`
+
+**Purpose:** Root stack. Wires the nested stacks together and exposes outputs.
+
+**Key parameters:**
+
+- `NestedStacksS3BucketName`: Bucket that holds the nested templates
+- `ProjectName` (default `netwk-lab02`), `Environment` (`devl`, `stag`, `prod`), `CiSuffix`
+- `VPCCidrBlock`, `PublicSubnetCidrBlocks`, `PrivateSubnetCidrBlocks`
+- `PublicSshSgName`, `PrivateSshSgName`: Base names for the security groups
+- `ImageId` (SSM parameter, latest Amazon Linux 2023), `InstanceType` (`t3.micro`, `t3.small`, `t3.medium`, `t2.micro`), `KeyPairName` (default `networking-lab`)
+
+**Key outputs:** `VpcId`, `InternetGatewayId`, `PublicSubnet1Arn` and `PrivateSubnet1Arn` (both return subnet IDs), `PublicSshSgId`, `PublicSshSgName`, `PrivateSshSgId`, `PrivateSshSgName`, `PrivateEC2InstanceId`. There is no output for the public instance.
+
+### `cloudformation/parameters.json`
+
+**Purpose:** Parameter values used for the lab. It sets `ProjectName` to `networking`, `VPCCidrBlock` to `10.11.0.0/16`, the public and private subnet CIDRs to `10.11.0.0/20` and `10.11.48.0/20`, and `CiSuffix` to empty. Other parameters use their template defaults.
+
+### `cloudformation/stack-config.json`
+
+**Purpose:** Read by CI to get the stack name (`aws-lab02-private-subnet-ec2-access-stack`), the template path, and the parameter file path.
+
+## Naming Convention
+
+The VPC name tag follows this pattern:
 
 ```bash
-npm ci
+{ProjectName}-{Environment}-{Region}[-{CiSuffix}]
 ```
 
-### Trigger semantic release (usually automatic on main)
-
-```bash
-npm run release
-```
-
-### Commit with conventional commit format
-
-```bash
-npx cz commit
-```
-
-Select `feat`, `fix`, or `chore` type. Only `feat` and `fix` trigger releases.
-
-## Key Architecture Concepts
-
-### Nested Stack Pattern
-
-This repo provides **nested stack templates** — templates that are referenced from parent/root CloudFormation stacks via `TemplateURL`. The templates are self-contained and export outputs for cross-stack references.
-
-- **Parent stack** calls: `AWS::CloudFormation::Stack` with `TemplateURL` pointing to S3
-- **Nested templates** output values via `Outputs` section with `Export`
-- Parent retrieves outputs via `!GetAtt NestedStack.Outputs.OutputKey`
-
-### Bucket Naming Convention
-
-Bucket names follow a deterministic pattern driven by parameters:
-
-```bash
-{ProjectName}-{BucketBaseName}-{AccountId}-{Environment}-{Region}[-{CiSuffix}]
-```
-
-Example: `myproject-cfn-bucket-123456789012-devl-us-east-1`
-
-This ensures:
-
-- Uniqueness across AWS accounts and regions
-- Environment isolation
-- Consistent naming for infrastructure automation
-
-### Parameter-Driven Configuration
-
-Both templates accept parameters to support:
-
-- **Standalone mode**: Direct bucket name provided
-- **Integrated mode**: Bucket name constructed from project/environment parameters
-
-The `s3-bucket-policy.yaml` template checks if `BucketName` is provided; if not, it constructs the name using the same parameters as the bucket template.
-
-## Key Files to Understand
-
-### `templates/s3-bucket.yaml`
-
-**Purpose:** Creates an S3 bucket with security defaults
-
-**Key inputs:**
-
-- `ProjectName` (required): Project prefix
-- `BucketBaseName` (default: `cfn-bucket`): Base name component
-- `environment`: Environment label (devl, stag, prod)
-- `CiSuffix`: Optional suffix for CI/CD unique deployments
-
-**Key outputs:**
-
-- `S3BucketName`: Bucket name (exported for parent stack)
-- `S3BucketArn`: Bucket ARN
-
-**Features:**
-
-- Versioning enabled by default
-- Public access blocking enabled (all 4 options)
-- Conditional naming: different bucket name with/without CI suffix
-
-### `templates/s3-bucket-policy.yaml`
-
-**Purpose:** Applies an optional S3 bucket policy for encryption and transport security
-
-**Key inputs:** Same as bucket template, plus `BucketName` (standalone mode)
-
-**Behavior:**
-
-- If `BucketName` provided (non-empty), use it directly
-- Otherwise, construct name from ProjectName/BucketBaseName/environment/CiSuffix
-- Enforces S3 encryption on PutObject
-- Enforces HTTPS-only transport
-
-### `.github/workflows/ci.yaml`
-
-**Triggered on:**
-
-- Manual workflow_dispatch (anytime)
-- Pull requests (any branch)
-- Pushes to `feature/**` and `bug/**` branches
-
-**Path filter:** Only runs if changes to `templates/`, `parameters/`, or `.github/workflows/ci.yaml`
-
-**Phases:**
-
-1. **Validation:** `aws cloudformation validate-template` on both templates
-2. **Deployment:** Creates CloudFormation stacks in CI environment
-3. **Cleanup:** Destroys stacks (policy stack first, then bucket) for ephemeral testing
-
-**Environment setup:**
-
-- Reads config from GitHub environment variables: `AWS_REGION`, `AWS_ACCOUNT_ID`, `OIDC_ROLE_NAME`, `CFN_TEMPLATES_S3_BUCKET`
-- Uses AWS OIDC for keyless authentication via `aws-actions/configure-aws-credentials`
-- Requires GitHub environment `ci` with OIDC trust configured
-
-### `.github/workflows/release.yaml`
-
-**Triggered:** On push to main
-
-**Process:**
-
-1. Analyze commits (conventional format: `feat:`, `fix:`, `BREAKING CHANGE:`)
-2. Generate release notes
-3. Update CHANGELOG.md
-4. Create GitHub release and tag
-5. Commit version bump
-
-**Release rules:**
-
-- `feat:` → MINOR bump (0.1.0 → 0.2.0)
-- `fix:` → PATCH bump (0.1.0 → 0.1.1)
-- `BREAKING CHANGE:` → MAJOR bump (0.1.0 → 1.0.0)
-- Other commits → no release
+Example: `networking-devl-us-east-1` (with the values in `parameters.json`)
 
 ## Testing & Validation
 
-**Manual template validation:**
+**Validate the template:**
 
 ```bash
-aws cloudformation validate-template --template-body file://templates/s3-bucket.yaml
-aws cloudformation validate-template --template-body file://templates/s3-bucket-policy.yaml
+aws cloudformation validate-template --template-body file://cloudformation/template.yaml
 ```
 
-**Manual stack deployment:**
+**Deploy the root stack:**
 
 ```bash
-# Deploy bucket to dev environment
 aws cloudformation deploy \
-  --template-file templates/s3-bucket.yaml \
-  --stack-name my-stack-dev \
-  --parameter-overrides file://parameters/dev.json \
-  --region us-east-1
-
-# Deploy policy after bucket is created
-aws cloudformation deploy \
-  --template-file templates/s3-bucket-policy.yaml \
-  --stack-name my-policy-dev \
-  --parameter-overrides file://parameters/policy-dev.json \
-  --region us-east-1
+  --template-file cloudformation/template.yaml \
+  --stack-name aws-lab02-private-subnet-ec2-access-stack \
+  --region us-east-1 \
+  --parameter-overrides ProjectName=networking
 ```
 
-The CI workflow (ci.yaml) runs this full cycle automatically on PR, then cleans up.
+Pass other parameters as `Name=Value` pairs in `--parameter-overrides`. The nested templates must already be in the S3 bucket, and the EC2 key pair named by `KeyPairName` must exist in the account and region.
 
-## AWS Credentials & Environment Variables
+**Verify outputs and clean up:**
 
-**GitHub environment variables required in `ci` environment:**
+```bash
+aws cloudformation describe-stacks --stack-name aws-lab02-private-subnet-ec2-access-stack --query 'Stacks[0].Outputs' --output table
+aws cloudformation delete-stack --stack-name aws-lab02-private-subnet-ec2-access-stack
+```
 
-- `AWS_REGION`: CloudFormation deployment region
-- `AWS_ACCOUNT_ID`: AWS account to deploy into
-- `OIDC_ROLE_NAME`: IAM role name for OIDC trust (uses `arn:aws:iam::{ACCOUNT_ID}:role/{ROLE_NAME}`)
-- `CFN_TEMPLATES_S3_BUCKET`: S3 bucket where templates are stored
+## CI Workflow
 
-**OIDC setup:** The CI workflow uses AWS OIDC for keyless auth. The GitHub OIDC provider must trust the specified role.
+`.github/workflows/ci.yaml` (named "CI Build Workflow") reads `cloudformation/stack-config.json` and calls the reusable workflow `subhamay-bhattacharyya-gha/cfn-ci-build-reusable-wf` with environment `ci`. Its push and pull request triggers are commented out, so it currently runs only on manual dispatch. The same file also has changelog and release jobs.
+
+**GitHub environment variables required in the `ci` environment** (used by the reusable workflow):
+
+- `AWS_REGION`, `AWS_ACCOUNT_ID`, `OIDC_ROLE_NAME`, `CFN_TEMPLATES_S3_BUCKET`
+
+**OIDC setup:** The workflow uses AWS OIDC for keyless auth (`id-token: write`). The GitHub OIDC provider must trust the role named by `OIDC_ROLE_NAME`.
 
 ## Conventional Commits & Release Flow
 
-This repo enforces conventional commits to drive semantic versioning:
+Commits to `main` drive semantic-release through `.releaserc.json` (`@semantic-release/commit-analyzer`, release notes, changelog, git, and GitHub plugins).
 
-```bash
-npx cz commit
+```text
+feat: add support for X       → MINOR release
+fix: correct behavior of Y    → PATCH release
+BREAKING CHANGE: ...          → MAJOR release
+chore: / docs: ...            → no release
 ```
 
-Commit types:
+Feature branches follow the same commit format. Releases happen on merge to `main`.
 
-- `feat: add support for X` → triggers MINOR release
-- `fix: correct behavior of Y` → triggers PATCH release
-- `chore: update deps` → no release
-- `docs: clarify README` → no release
+## When Modifying the Template
 
-Only commits to `main` trigger releases. Feature branches use this format but releases happen on merge to main.
-
-## When Modifying Templates
-
-1. **Edit the template YAML** in `templates/`
-2. **Update parameter files** in `parameters/` if new parameters added
-3. **Test locally** with `aws cloudformation validate-template`
-4. **Create a PR** with conventional commit message (e.g., `feat: add encryption key parameter`)
-5. **CI validates and deploys** to dev environment automatically
-6. **Merge to main** → release workflow creates version tag and GitHub release
+1. **Edit** `cloudformation/template.yaml`
+2. **Update** `cloudformation/parameters.json` if you add or change parameters that the lab sets
+3. **Validate** with `aws cloudformation validate-template`
+4. **Update** `README.md` if resources, parameters or outputs change
+5. **Commit** with a conventional commit message (e.g., `feat: add encryption key parameter`)
+6. **Merge to `main`** → the release workflow creates the tag and GitHub release
 
 ## Dev Container
 
-Pre-configured with:
-
-- Node.js 20
-- GitHub Copilot extension
-
-Use via VS Code: `code --remote-container-url <repo-url>`
+Pre-configured with Node.js 20 and the GitHub Copilot extension. The repo no longer has a `package.json`, so there are no npm dependencies to install.
 
 ## Current Branch
 
-Main branch is the release branch. Feature work branches from here and merges back via PR. Branch naming follows: `{type}/CFN-{issue-number}-{slug}` (e.g., `feature/CFN-42-add-encryption`).
-
+`main` is the release branch. Feature work branches from `main` and merges back via PR. Branch naming follows `{type}/CFN-{issue-number}-{slug}` (e.g., `feature/CFN-42-add-encryption`).
