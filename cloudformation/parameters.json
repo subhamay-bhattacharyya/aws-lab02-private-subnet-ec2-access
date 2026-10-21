@@ -1,9 +1,9 @@
 {
-  "Environment": "devl",
-  "ProjectName": "netwk-lab02",
-  "VPCCidrBlock": "10.11.0.0/16",
-  "PublicSubnetCidrBlocks": "10.11.0.0/20",
-  "PrivateSubnetCidrBlocks": "10.11.48.0/20",
-  "KeyPairName": "networking-lab",
-  "CiSuffix": ""
+  "Env": "devl",
+  "Project": "netwk-lab02",
+  "VpcCidr": "10.11.0.0/16",
+  "PublicCidrs": "10.11.0.0/20",
+  "PrivateCidrs": "10.11.48.0/20",
+  "KeyName": "networking-lab",
+  "Suffix": ""
 }
