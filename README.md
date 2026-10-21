@@ -31,17 +31,17 @@ This lab deploys a VPC with one public subnet and one private subnet in `us-east
 
 ## Architecture
 
-The root stack creates the following nested stacks. Each one reads its template from the bucket named by the `NestedStacksS3BucketName` parameter.
+The root stack creates the following nested stacks. Each one reads its template from the bucket named by the `TemplateBucket` parameter.
 
 | Nested Stack | Template S3 Key | Creates |
 | ------------ | --------------- | ------- |
-| `VpcNestedStack` | `cfn-nested-aws-vpc/template.yaml` | VPC with DNS support and hostnames enabled, and an attached Internet Gateway |
-| `PublicSubnetsStack` | `cfn-nested-aws-subnets/template.yaml` | One public subnet in `us-east-1a` (`SubnetQualifier: public`), given the Internet Gateway ID |
-| `PrivateSubnetsStack` | `cfn-nested-aws-subnets/template.yaml` | One private subnet in `us-east-1a` (`SubnetQualifier: private`) |
-| `PublicSshSgStack` | `cfn-nested-aws-ec2-security-group/template.yaml` | SSH-only security group, with SSH allowed from `0.0.0.0/0` |
-| `PrivateSshSgStack` | `cfn-nested-aws-ec2-security-group/template.yaml` | SSH-only security group, with SSH allowed from the public SSH security group (`PublicSshSgStack`) |
-| `PublicEc2Instance` | `cfn-nested-aws-ec2-instance/template.yaml` | EC2 instance in the public subnet, with the public SSH security group attached |
-| `PrivateEc2Instance` | `cfn-nested-aws-ec2-instance/template.yaml` | EC2 instance in the private subnet, with the private SSH security group attached |
+| `Vpc` | `cfn-nested-aws-vpc/template.yaml` | VPC with DNS support and hostnames enabled, and an attached Internet Gateway |
+| `PublicSubnets` | `cfn-nested-aws-subnets/template.yaml` | One public subnet in `us-east-1a` (`SubnetQualifier: public`), given the Internet Gateway ID |
+| `PrivateSubnets` | `cfn-nested-aws-subnets/template.yaml` | One private subnet in `us-east-1a` (`SubnetQualifier: private`), with no default route to the Internet Gateway |
+| `PublicSg` | `cfn-nested-aws-ec2-security-group/template.yaml` | SSH-only security group, with SSH allowed from `0.0.0.0/0` |
+| `PrivateSg` | `cfn-nested-aws-ec2-security-group/template.yaml` | SSH-only security group, with SSH allowed from the public SSH security group (`PublicSg`) |
+| `PublicEc2` | `cfn-nested-aws-ec2-instance/template.yaml` | EC2 instance in the public subnet, with the public SSH security group attached |
+| `PrivateEc2` | `cfn-nested-aws-ec2-instance/template.yaml` | EC2 instance in the private subnet, with the private SSH security group attached and the key pair from `KeyName` |
 
 ## Template Files
 
@@ -53,41 +53,40 @@ The root stack creates the following nested stacks. Each one reads its template 
 
 | Parameter | Type | Default | Description |
 | --------- | ---- | ------- | ----------- |
-| `NestedStacksS3BucketName` | String | `subhamay-cfn-templates-bucket-270453428528-us-east-1` | S3 bucket that holds the nested templates |
-| `ProjectName` | String | `netwk-lab02` | Project name used in resource names (lowercase letters, numbers, hyphens; max 20) |
-| `Environment` | String | `devl` | Deployment environment (`devl`, `stag`, `prod`) |
-| `VPCCidrBlock` | String | `10.100.0.0/16` | CIDR block for the VPC |
-| `PublicSubnetCidrBlocks` | String | `10.100.0.0/20` | CIDR block for the public subnet |
-| `PrivateSubnetCidrBlocks` | String | `10.100.16.0/20` | CIDR block for the private subnet |
-| `PublicSshSgName` | String | `ssh-public-sg` | Base name for the SSH-only security group in the public subnet (lowercase letters, numbers, hyphens; max 30) |
-| `PrivateSshSgName` | String | `ssh-private-sg` | Base name for the SSH-only security group in the private subnet (lowercase letters, numbers, hyphens; max 30) |
-| `ImageId` | SSM parameter | `/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64` | SSM parameter that resolves to the AMI for both instances (latest Amazon Linux 2023 x86_64 in the deployment region) |
+| `TemplateBucket` | String | `subhamay-cfn-templates-bucket-270453428528-us-east-1` | S3 bucket that holds the nested templates |
+| `Project` | String | `netwk-lab02` | Project name used in resource names (lowercase letters, numbers, hyphens; max 20) |
+| `Env` | String | `devl` | Deployment environment (`devl`, `stag`, `prod`) |
+| `VpcCidr` | String | `10.100.0.0/16` | CIDR block for the VPC |
+| `PublicCidrs` | String | `10.100.0.0/20` | CIDR block for the public subnet |
+| `PrivateCidrs` | String | `10.100.16.0/20` | CIDR block for the private subnet |
+| `PublicSgName` | String | `ssh-public-sg` | Base name for the SSH-only security group in the public subnet (lowercase letters, numbers, hyphens; max 30) |
+| `PrivateSgName` | String | `ssh-private-sg` | Base name for the SSH-only security group in the private subnet (lowercase letters, numbers, hyphens; max 30) |
+| `AmiParam` | String | `/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64` | SSM parameter name that resolves to the AMI for both instances (latest Amazon Linux 2023 x86_64 in the deployment region). Pass the parameter name, not an AMI ID |
 | `InstanceType` | String | `t3.micro` | EC2 instance type (`t3.micro`, `t3.small`, `t3.medium`, `t2.micro`) |
-| `KeyPairName` | String | `networking-lab` | Name of an existing EC2 key pair for SSH access, in the same account and region |
-| `CiSuffix` | String | `""` | Optional suffix appended to resource names for CI deployments |
+| `KeyName` | String | `networking-lab` | Name of an existing EC2 key pair for SSH access, in the same account and region |
+| `Suffix` | String | `""` | Optional suffix appended to resource names for CI deployments |
 
-`cloudformation/parameters.json` sets `ProjectName` to `networking`, `Environment` to `devl`, `VPCCidrBlock` to `10.11.0.0/16`, `PublicSubnetCidrBlocks` to `10.11.0.0/20`, `PrivateSubnetCidrBlocks` to `10.11.48.0/20`, and `CiSuffix` to an empty string. It does not set the other parameters, so their defaults apply.
+`cloudformation/parameters.json` sets `Project` to `netwk-lab02`, `Env` to `devl`, `VpcCidr` to `10.11.0.0/16`, `PublicCidrs` to `10.11.0.0/20`, `PrivateCidrs` to `10.11.48.0/20`, `KeyName` to `networking-lab`, and `Suffix` to an empty string. It does not set the other parameters, so their defaults apply.
 
 ## Outputs
 
 - `VpcId` — ID of the VPC
-- `InternetGatewayId` — ID of the Internet Gateway
-- `PublicSubnet1Arn` — ID of the public subnet (the template's description says ARN, but the value is the subnet ID)
-- `PrivateSubnet1Arn` — ID of the private subnet (the template's description says ARN, but the value is the subnet ID)
-- `PublicSshSgId` — ID of the public subnet SSH security group
-- `PublicSshSgName` — Name of the public subnet SSH security group
-- `PrivateSshSgId` — ID of the private subnet SSH security group
-- `PrivateSshSgName` — Name of the private subnet SSH security group
-- `PrivateEC2InstanceId` — ID of the EC2 instance in the private subnet
-
-The template has no output for the public EC2 instance.
+- `IgwId` — ID of the Internet Gateway
+- `PublicSubnetId` — ID of the public subnet
+- `PrivateSubnetId` — ID of the private subnet
+- `PublicSgId` — ID of the public subnet SSH security group
+- `PublicSgName` — Name of the public subnet SSH security group
+- `PrivateSgId` — ID of the private subnet SSH security group
+- `PrivateSgName` — Name of the private subnet SSH security group
+- `PublicEc2Id` — ID of the EC2 instance in the public subnet
+- `PrivateEc2Id` — ID of the EC2 instance in the private subnet
 
 ## Usage
 
 ### 1. Prerequisites
 
 - An S3 bucket in `us-east-1` containing the nested templates at the keys listed in [Architecture](#architecture)
-- An existing EC2 key pair named `networking-lab` (or set `KeyPairName` to your key pair) in the same account and region
+- An existing EC2 key pair named `networking-lab` (or set `KeyName` to your key pair) in the same account and region
 - AWS CLI credentials with permission to create CloudFormation, VPC, security group, and EC2 resources, and `s3:GetObject` on the template bucket
 
 ### 2. Upload Nested Templates to S3
@@ -114,7 +113,7 @@ aws cloudformation deploy \
   --region us-east-1
 ```
 
-To use the values in `cloudformation/parameters.json`, or any other parameter, add them to `--parameter-overrides` as `Name=Value` pairs, for example `--parameter-overrides ProjectName=networking`.
+To use the values in `cloudformation/parameters.json`, or any other parameter, add them to `--parameter-overrides` as `Name=Value` pairs, for example `--parameter-overrides Project=networking`.
 
 ### 4. Verify the Outputs
 

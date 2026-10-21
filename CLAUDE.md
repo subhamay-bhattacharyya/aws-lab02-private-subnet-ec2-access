@@ -45,17 +45,17 @@ README.md                          # Lab documentation
 
 ## Nested Stacks
 
-The root stack (`cloudformation/template.yaml`) creates these nested stacks. Each one's `TemplateURL` is `https://${NestedStacksS3BucketName}.s3.us-east-1.amazonaws.com/<key>`.
+The root stack (`cloudformation/template.yaml`) creates these nested stacks. Each one's `TemplateURL` is `https://${TemplateBucket}.s3.us-east-1.amazonaws.com/<key>`.
 
 | Root resource | S3 key | Purpose |
 | ------------- | ------ | ------- |
-| `VpcNestedStack` | `cfn-nested-aws-vpc/template.yaml` | VPC and Internet Gateway |
-| `PublicSubnetsStack` | `cfn-nested-aws-subnets/template.yaml` | Public subnet (`SubnetQualifier: public`), given the IGW ID |
-| `PrivateSubnetsStack` | `cfn-nested-aws-subnets/template.yaml` | Private subnet (`SubnetQualifier: private`) |
-| `PublicSshSgStack` | `cfn-nested-aws-ec2-security-group/template.yaml` | SSH from `0.0.0.0/0` |
-| `PrivateSshSgStack` | `cfn-nested-aws-ec2-security-group/template.yaml` | SSH from the public SSH security group |
-| `PublicEc2Instance` | `cfn-nested-aws-ec2-instance/template.yaml` | EC2 instance in the public subnet |
-| `PrivateEc2Instance` | `cfn-nested-aws-ec2-instance/template.yaml` | EC2 instance in the private subnet |
+| `Vpc` | `cfn-nested-aws-vpc/template.yaml` | VPC and Internet Gateway |
+| `PublicSubnets` | `cfn-nested-aws-subnets/template.yaml` | Public subnet (`SubnetQualifier: public`), given the IGW ID |
+| `PrivateSubnets` | `cfn-nested-aws-subnets/template.yaml` | Private subnet (`SubnetQualifier: private`), no IGW passed |
+| `PublicSg` | `cfn-nested-aws-ec2-security-group/template.yaml` | SSH from `0.0.0.0/0` |
+| `PrivateSg` | `cfn-nested-aws-ec2-security-group/template.yaml` | SSH from the public SSH security group |
+| `PublicEc2` | `cfn-nested-aws-ec2-instance/template.yaml` | EC2 instance in the public subnet |
+| `PrivateEc2` | `cfn-nested-aws-ec2-instance/template.yaml` | EC2 instance in the private subnet |
 
 The nested templates are not in this repo. Changes to them must be uploaded to the bucket separately.
 
@@ -67,17 +67,17 @@ The nested templates are not in this repo. Changes to them must be uploaded to t
 
 **Key parameters:**
 
-- `NestedStacksS3BucketName`: Bucket that holds the nested templates
-- `ProjectName` (default `netwk-lab02`), `Environment` (`devl`, `stag`, `prod`), `CiSuffix`
-- `VPCCidrBlock`, `PublicSubnetCidrBlocks`, `PrivateSubnetCidrBlocks`
-- `PublicSshSgName`, `PrivateSshSgName`: Base names for the security groups
-- `ImageId` (SSM parameter, latest Amazon Linux 2023), `InstanceType` (`t3.micro`, `t3.small`, `t3.medium`, `t2.micro`), `KeyPairName` (default `networking-lab`)
+- `TemplateBucket`: Bucket that holds the nested templates
+- `Project` (default `netwk-lab02`), `Env` (`devl`, `stag`, `prod`), `Suffix`
+- `VpcCidr`, `PublicCidrs`, `PrivateCidrs`
+- `PublicSgName`, `PrivateSgName`: Base names for the security groups
+- `AmiParam` (SSM parameter name, latest Amazon Linux 2023; pass the name, not an AMI ID), `InstanceType` (`t3.micro`, `t3.small`, `t3.medium`, `t2.micro`), `KeyName` (default `networking-lab`)
 
-**Key outputs:** `VpcId`, `InternetGatewayId`, `PublicSubnet1Arn` and `PrivateSubnet1Arn` (both return subnet IDs), `PublicSshSgId`, `PublicSshSgName`, `PrivateSshSgId`, `PrivateSshSgName`, `PrivateEC2InstanceId`. There is no output for the public instance.
+**Key outputs:** `VpcId`, `IgwId`, `PublicSubnetId`, `PrivateSubnetId`, `PublicSgId`, `PublicSgName`, `PrivateSgId`, `PrivateSgName`, `PublicEc2Id`, `PrivateEc2Id`.
 
 ### `cloudformation/parameters.json`
 
-**Purpose:** Parameter values used for the lab. It sets `ProjectName` to `networking`, `VPCCidrBlock` to `10.11.0.0/16`, the public and private subnet CIDRs to `10.11.0.0/20` and `10.11.48.0/20`, and `CiSuffix` to empty. Other parameters use their template defaults.
+**Purpose:** Parameter values used for the lab. It sets `Project` to `netwk-lab02`, `VpcCidr` to `10.11.0.0/16`, the public and private CIDRs to `10.11.0.0/20` and `10.11.48.0/20`, `KeyName` to `networking-lab`, and `Suffix` to empty. Other parameters use their template defaults.
 
 ### `cloudformation/stack-config.json`
 
