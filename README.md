@@ -64,9 +64,9 @@ The root stack creates the following nested stacks. Each one reads its template 
 | `AmiParam` | String | `/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64` | SSM parameter name that resolves to the AMI for both instances (latest Amazon Linux 2023 x86_64 in the deployment region). Pass the parameter name, not an AMI ID |
 | `InstanceType` | String | `t3.micro` | EC2 instance type (`t3.micro`, `t3.small`, `t3.medium`, `t2.micro`) |
 | `KeyName` | String | `networking-lab` | Name of an existing EC2 key pair for SSH access, in the same account and region |
-| `Suffix` | String | `""` | Optional suffix appended to resource names for CI deployments |
+| `CiSuffix` | String | `""` | Optional suffix appended to resource names for CI deployments |
 
-`cloudformation/parameters.json` sets `Project` to `netwk-lab02`, `Env` to `devl`, `VpcCidr` to `10.11.0.0/16`, `PublicCidrs` to `10.11.0.0/20`, `PrivateCidrs` to `10.11.48.0/20`, `KeyName` to `networking-lab`, and `Suffix` to an empty string. It does not set the other parameters, so their defaults apply.
+`cloudformation/parameters.json` sets `Project` to `netwk-lab02`, `Env` to `devl`, `VpcCidr` to `10.11.0.0/16`, `PublicCidrs` to `10.11.0.0/20`, `PrivateCidrs` to `10.11.48.0/20`, `KeyName` to `networking-lab`, and `CiSuffix` to an empty string. It does not set the other parameters, so their defaults apply.
 
 ## Outputs
 

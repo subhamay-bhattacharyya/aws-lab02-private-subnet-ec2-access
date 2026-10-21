@@ -68,7 +68,7 @@ The nested templates are not in this repo. Changes to them must be uploaded to t
 **Key parameters:**
 
 - `TemplateBucket`: Bucket that holds the nested templates
-- `Project` (default `netwk-lab02`), `Env` (`devl`, `stag`, `prod`), `Suffix`
+- `Project` (default `netwk-lab02`), `Env` (`devl`, `stag`, `prod`), `CiSuffix`
 - `VpcCidr`, `PublicCidrs`, `PrivateCidrs`
 - `PublicSgName`, `PrivateSgName`: Base names for the security groups
 - `AmiParam` (SSM parameter name, latest Amazon Linux 2023; pass the name, not an AMI ID), `InstanceType` (`t3.micro`, `t3.small`, `t3.medium`, `t2.micro`), `KeyName` (default `networking-lab`)
@@ -77,7 +77,7 @@ The nested templates are not in this repo. Changes to them must be uploaded to t
 
 ### `cloudformation/parameters.json`
 
-**Purpose:** Parameter values used for the lab. It sets `Project` to `netwk-lab02`, `VpcCidr` to `10.11.0.0/16`, the public and private CIDRs to `10.11.0.0/20` and `10.11.48.0/20`, `KeyName` to `networking-lab`, and `Suffix` to empty. Other parameters use their template defaults.
+**Purpose:** Parameter values used for the lab. It sets `Project` to `netwk-lab02`, `VpcCidr` to `10.11.0.0/16`, the public and private CIDRs to `10.11.0.0/20` and `10.11.48.0/20`, `KeyName` to `networking-lab`, and `CiSuffix` to empty. Other parameters use their template defaults.
 
 ### `cloudformation/stack-config.json`
 

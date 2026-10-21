@@ -5,5 +5,5 @@
   "PublicCidrs": "10.11.0.0/20",
   "PrivateCidrs": "10.11.48.0/20",
   "KeyName": "networking-lab",
-  "Suffix": ""
+  "CiSuffix": ""
 }

@@ -42,7 +42,7 @@ Metadata:
       - Label:
           default: "Advanced Configuration"
         Parameters:
-          - Suffix
+          - CiSuffix
     ParameterLabels:
       TemplateBucket:
         default: "S3 Bucket Name"
@@ -66,8 +66,8 @@ Metadata:
         default: "EC2 Instance Type"
       KeyName:
         default: "EC2 Key Pair Name (for SSH)"
-      Suffix:
-        default: "CI Suffix"
+      CiSuffix:
+        default: "CI CiSuffix"
 
 Parameters:
   TemplateBucket:
@@ -119,7 +119,7 @@ Parameters:
     AllowedPattern: '^(\d{1,3}\.){3}\d{1,3}/\d{1,2}(,\s*(\d{1,3}\.){3}\d{1,3}/\d{1,2})*$'
     ConstraintDescription: "Must be valid CIDR blocks, comma-separated"
 
-  Suffix:
+  CiSuffix:
     Type: String
     Default: ""
     Description: "Optional CI suffix to append to the bucket name"
@@ -166,7 +166,7 @@ Parameters:
 
 
 Conditions:
-  HasSuffix: !Not [!Equals [!Ref Suffix, ""]]
+  HasSuffix: !Not [!Equals [!Ref CiSuffix, ""]]
 
 Resources:
 
@@ -183,7 +183,7 @@ Resources:
           EnableInternetGateway: "true"
           VpcNameTag: !If
             - HasSuffix
-            - !Sub "${Project}-${Env}-${AWS::Region}-${Suffix}"
+            - !Sub "${Project}-${Env}-${AWS::Region}-${CiSuffix}"
             - !Sub "${Project}-${Env}-${AWS::Region}"
           Environment: !Ref Env
       Tags:
@@ -208,7 +208,7 @@ Resources:
         VpcId: !GetAtt Vpc.Outputs.VPCId
         VpcName: !If
           - HasSuffix
-          - !Sub "${Project}-${Env}-${Suffix}"
+          - !Sub "${Project}-${Env}-${CiSuffix}"
           - !Sub "${Project}-${Env}"
         AvailabilityZones: "us-east-1a"
         SubnetCidrBlocks: !Ref PublicCidrs
@@ -237,7 +237,7 @@ Resources:
         VpcId: !GetAtt Vpc.Outputs.VPCId
         VpcName: !If
           - HasSuffix
-          - !Sub "${Project}-${Env}-${Suffix}"
+          - !Sub "${Project}-${Env}-${CiSuffix}"
           - !Sub "${Project}-${Env}"
         AvailabilityZones: "us-east-1a"
         SubnetCidrBlocks: !Ref PrivateCidrs
@@ -266,7 +266,7 @@ Resources:
         ProjectName: !Ref Project
         SecurityGroupBaseName: !Ref PublicSgName
         SecurityGroupDescription: "Security group for SSH-only access"
-        CiSuffix: !Ref Suffix
+        CiSuffix: !Ref CiSuffix
         Rule1RuleSet: "SSHOnly"
         Rule1SourceCidr: "0.0.0.0/0"
         Rule2RuleSet: "None"
@@ -297,7 +297,7 @@ Resources:
         ProjectName: !Ref Project
         SecurityGroupBaseName: !Ref PrivateSgName
         SecurityGroupDescription: "Security group for SSH-only access"
-        CiSuffix: !Ref Suffix
+        CiSuffix: !Ref CiSuffix
         Rule1RuleSet: "SSHOnly"
         Rule1SourceSecurityGroupId: !GetAtt PublicSg.Outputs.SecurityGroupId
         Rule2RuleSet: "None"
@@ -327,7 +327,7 @@ Resources:
         ProjectName: !Ref Project
         InstanceBaseName: "public-ec2"
         Environment: !Ref Env
-        CiSuffix: !Ref Suffix
+        CiSuffix: !Ref CiSuffix
         ImageId: !Ref AmiParam
         InstanceType: !Ref InstanceType
         KeyName: !Ref KeyName
@@ -355,7 +355,7 @@ Resources:
         ProjectName: !Ref Project
         InstanceBaseName: "private-ec2"
         Environment: !Ref Env
-        CiSuffix: !Ref Suffix
+        CiSuffix: !Ref CiSuffix
         ImageId: !Ref AmiParam
         InstanceType: !Ref InstanceType
         KeyName: !Ref KeyName
